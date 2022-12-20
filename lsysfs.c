@@ -78,6 +78,17 @@ int get_file_index( const char *path )
 	return -1;
 }
 
+int get_dir_index( const char *path )
+{
+	path++; // Eliminating "/" in the path
+
+	for ( int curr_idx = 0; curr_idx <= curr_dir_idx; curr_idx++ )
+		if ( strcmp( path, dir_list[ curr_idx ] ) == 0 )
+			return curr_idx;
+
+	return -1;
+}
+
 void write_to_file( const char *path, const char *new_content )
 {
 	int file_idx = get_file_index( path );
@@ -170,6 +181,37 @@ static int do_write( const char *path, const char *buffer, size_t size, off_t of
 	return size;
 }
 
+static int do_unlink(const char *path)
+{
+	// find the file
+	int file_index = get_file_index(path);
+
+	// move all trailing files one position before
+	for ( int i = file_index + 1; i <= curr_file_idx; i++ ) {
+		strcpy(files_list[i-1], files_list[i]);
+	}
+	strcpy(files_list[curr_file_idx], "");
+	curr_file_idx--;
+
+	return 0;
+}
+
+static int do_rmdir(const char *path)
+{
+	// find the directory
+	int dir_index = get_dir_index(path);
+
+	// move all trailing directories one position before
+	for ( int i = dir_index + 1; i <= curr_dir_idx; i++ ) {
+		strcpy(dir_list[i-1], dir_list[i]);
+	}
+	strcpy(dir_list[curr_dir_idx], "");
+	curr_dir_idx--;
+
+	return 0;
+}
+
+
 static struct fuse_operations operations = {
     .getattr	= do_getattr,
     .readdir	= do_readdir,
@@ -177,6 +219,8 @@ static struct fuse_operations operations = {
     .mkdir		= do_mkdir,
     .mknod		= do_mknod,
     .write		= do_write,
+	.unlink     = do_unlink,
+	.rmdir      = do_rmdir,
 };
 
 int main( int argc, char *argv[] )
