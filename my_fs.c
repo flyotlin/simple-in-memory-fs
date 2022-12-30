@@ -1,5 +1,6 @@
 #define FUSE_USE_VERSION 30
 
+#include <errno.h>
 #include <fuse.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -29,26 +30,27 @@ static struct node *root;
 
 struct node *find_node(const char *const_path)
 {
-    if (!strcmp(const_path, "/")) {
+    if (strcmp(const_path, "/") == 0) {
         return root;
     }
 
-    // traverse the tree from root to find target node
-    char *path;
+    // copy `const_path` to `path`
+    int len = strlen(const_path) + 1;
+    char *path = (char *) malloc(sizeof(char) * (len));
     strcpy(path, const_path);
-    struct node *now = root;
+    path[len-1] = '\0';
 
+    // traverse the tree from root to find target node
+    struct node *now = root;
     while (strlen(path) > 0) {
         if (now->is_file) {
             break;
         }
 
         // strip `/`
-        if (path[0] == '/') {
+        int i = 0;
+        while (path[i++] == '/') {
             path = path + 1;
-        } else {
-            printf("broken path: %s\n", path);
-            return NULL;
         }
 
         // get name
@@ -58,15 +60,19 @@ struct node *find_node(const char *const_path)
         }
         char *name = (char *) malloc(sizeof(char) * (count+1));
         strncpy(name, path, count);
+        name[count] = '\0';
         path = path + count;
 
         struct node *cur = now->child;
         while (cur != NULL) {
-            if (!strcmp(cur->name, name)) {
+            if (strcmp(cur->name, name) == 0) {
                 now = cur;
                 break;
             }
             cur = cur->next;
+        }
+        if (cur == NULL) {  // not found
+            return NULL;
         }
     }
     return now;
@@ -99,6 +105,10 @@ char *get_dirname(char *full_path)
         if (full_path[i] == '/') {
             dirname = (char *) malloc(sizeof(char) * (i+1));
             strncpy(dirname, full_path, i);
+
+            if (strcmp(dirname, "") == 0) {
+                return "/";
+            }
             return dirname;
         }
     }
@@ -130,8 +140,9 @@ struct node *create_dir_node(const char *name)
     dir->next = NULL;
 
     dir->is_file = 0;
-    strcpy(dir->name, name);
-    strcpy(dir->content, "");
+    // TODO: is direct assign a good idea? or we should copy then assign?
+    dir->name = name;
+    dir->content = "";
 
     time_t now = time(0);
     dir->access_time = now;
@@ -151,8 +162,9 @@ struct node *create_file_node(const char *name, const char *content)
     file->next = NULL;
 
     file->is_file = 1;
-    strcpy(file->name, name);
-    strcpy(file->content, content);
+    // TODO: is direct assign a good idea? or we should copy then assign?
+    file->name = name;
+    file->content = content;
 
     time_t now = time(0);
     file->access_time = now;
@@ -171,13 +183,19 @@ struct node *create_file_node(const char *name, const char *content)
 static int my_getattr(const char *path, struct stat *st)
 {
     printf("my_getattr path: %s\n", path);
+
     struct node *target = find_node(path);
+    if (target == NULL) {
+        return -ENOENT;
+    }
     set_stat(st, target);
     return 0;
 }
 
 static int my_readdir(const char *path, void *buffer, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
 {
+    printf("my_readdir path: %s\n", path);
+
     // Current and Parent Directory, leave stat NULL for now
     filler(buffer, ".", NULL, 0);
     filler(buffer, "..", NULL, 0);
@@ -193,12 +211,15 @@ static int my_readdir(const char *path, void *buffer, fuse_fill_dir_t filler, of
         struct stat *st = (struct stat *) malloc(sizeof(struct stat));
         set_stat(st, cur);
         filler(buffer, cur->name, st, 0);
+        cur = cur->next;
     }
     return 0;
 }
 
 static int my_read(const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi)
 {
+    printf("my_read path: %s\n", path);
+
     struct node *target = find_node(path);
 
     char *content = target->content;
@@ -208,6 +229,8 @@ static int my_read(const char *path, char *buffer, size_t size, off_t offset, st
 
 static int my_mkdir(const char *path, mode_t mode)
 {
+    printf("my_mkdir path: %s\n", path);
+
     char *dirname = get_dirname((char *) path);
     struct node *dirname_node = find_node(dirname);
 
@@ -230,6 +253,8 @@ static int my_mkdir(const char *path, mode_t mode)
 
 static int my_mknod(const char *path, mode_t mode, dev_t rdev)
 {
+    printf("my_mknod path: %s\n", path);
+
     char *dirname = get_dirname((char *) path);
     struct node *dirname_node = find_node(dirname);
 
@@ -252,6 +277,8 @@ static int my_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int my_write(const char *path, const char *buffer, size_t size, off_t offset, struct fuse_file_info *info)
 {
+    printf("my_write path: %s\n", path);
+
     struct node *target = find_node(path);
 
     int len = strlen(target->content) + strlen(buffer) + 1;
