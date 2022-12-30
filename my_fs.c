@@ -78,6 +78,59 @@ struct node *find_node(const char *const_path)
     return now;
 }
 
+struct node *find_prev_node(const char *const_path)
+{
+    if (strcmp(const_path, "/") == 0) {
+        return root;
+    }
+
+    // copy `const_path` to `path`
+    int len = strlen(const_path) + 1;
+    char *path = (char *) malloc(sizeof(char) * (len));
+    strcpy(path, const_path);
+    path[len-1] = '\0';
+
+    // traverse the tree from root to find target node
+    struct node *now = root;
+    struct node *prev;
+    while (strlen(path) > 0) {
+        if (now->is_file) {
+            break;
+        }
+
+        // strip `/`
+        int i = 0;
+        while (path[i++] == '/') {
+            path = path + 1;
+        }
+
+        // get name
+        int count = 0;
+        while (path[count] != '/' && path[count] != '\0') {
+            count++;
+        }
+        char *name = (char *) malloc(sizeof(char) * (count+1));
+        strncpy(name, path, count);
+        name[count] = '\0';
+        path = path + count;
+
+        struct node *cur = now->child;
+        prev = now;
+        while (cur != NULL) {
+            if (strcmp(cur->name, name) == 0) {
+                now = cur;
+                break;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+        if (cur == NULL) {  // not found
+            return NULL;
+        }
+    }
+    return prev;
+}
+
 void set_stat(struct stat *st, struct node *target)
 {
     // set struct stat
@@ -291,6 +344,54 @@ static int my_write(const char *path, const char *buffer, size_t size, off_t off
     return size;
 }
 
+static int my_unlink(const char *path)
+{
+    printf("my_unlink path: %s\n", path);
+
+    struct node *prev_target = find_prev_node(path);
+    if (prev_target == NULL) {
+        printf("target: %s not exist\n", path);
+        return -1;
+    }
+
+    struct node *target;
+    char *name = get_name(path);
+    if (prev_target->child && strcmp(prev_target->child->name, name) == 0) {
+        target = prev_target->child;
+        prev_target->child = target->next;
+    } else if (prev_target->next && strcmp(prev_target->next->name, name) == 0) {
+        target = prev_target->next;
+        prev_target->next = target->next;
+    } else {
+        return -1;
+    }
+    free(target);
+}
+
+static int my_rmdir(const char *path)
+{
+    printf("my_rmdir path: %s\n", path);
+
+    struct node *prev_target = find_prev_node(path);
+    if (prev_target == NULL) {
+        printf("target: %s not exist\n", path);
+        return -1;
+    }
+
+    struct node *target;
+    char *name = get_name(path);
+    if (prev_target->child && strcmp(prev_target->child->name, name) == 0) {
+        target = prev_target->child;
+        prev_target->child = target->next;
+    } else if (prev_target->next && strcmp(prev_target->next->name, name) == 0) {
+        target = prev_target->next;
+        prev_target->next = target->next;
+    } else {
+        return -1;
+    }
+    free(target);
+}
+
 static struct fuse_operations operations = {
     .getattr = my_getattr,
     .readdir = my_readdir,
@@ -298,6 +399,8 @@ static struct fuse_operations operations = {
     .mkdir   = my_mkdir,
     .mknod   = my_mknod,
     .write   = my_write,
+    .unlink  = my_unlink,
+    .rmdir   = my_rmdir,
 };
 
 int main(int argc, char *argv[])
