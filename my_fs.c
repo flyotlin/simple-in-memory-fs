@@ -392,6 +392,18 @@ static int my_rmdir(const char *path)
     free(target);
 }
 
+static int my_open(const char *path, struct fuse_file_info *fi)
+{
+    printf("my_open path: %s\n", path);
+    return 0;
+}
+
+static int my_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi)
+{
+    printf("my_utimens path: %s\n", path);
+    return 0;
+}
+
 static struct fuse_operations operations = {
     .getattr = my_getattr,
     .readdir = my_readdir,
@@ -401,6 +413,10 @@ static struct fuse_operations operations = {
     .write   = my_write,
     .unlink  = my_unlink,
     .rmdir   = my_rmdir,
+    .open    = my_open,
+    .utimens = my_utimens,
+    // .opendir
+    // .create
 };
 
 int main(int argc, char *argv[])
